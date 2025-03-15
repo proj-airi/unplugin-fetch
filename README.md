@@ -1,6 +1,6 @@
 <a name="readme-top"></a>
 
-`@proj-airi/unplugin-download`
+# `@proj-airi/unplugin-download`
 
 Helper plugin for helping installing the remote assets into public dir.
 
