@@ -1,6 +1,6 @@
 <a name="readme-top"></a>
 
-# `@proj-airi/unplugin-download`
+# `@proj-airi/unplugin-fetch`
 
 Helper plugin for helping installing the remote assets into public dir.
 
@@ -10,15 +10,15 @@ Pick the package manager of your choice:
 
 ```shell
 ni @proj-airi/lobe-icons -D # from @antfu/ni, can be installed via `npm i -g @antfu/ni`
-pnpm i @proj-airi/unplugin-download -D
-yarn i @proj-airi/unplugin-download -D
-npm i @proj-airi/unplugin-download -D
+pnpm i @proj-airi/unplugin-fetch -D
+yarn i @proj-airi/unplugin-fetch -D
+npm i @proj-airi/unplugin-fetch -D
 ```
 
 ### UnoCSS usage
 
 ```typescript
-import { Download } from '@proj-airi/unplugin-download/vite'
+import { Download } from '@proj-airi/unplugin-fetch/vite'
 import { defineConfig } from 'vite'
 
 export default defineConfig({
