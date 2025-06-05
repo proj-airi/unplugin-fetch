@@ -1,12 +1,6 @@
 import antfu from '@antfu/eslint-config'
 
-export default antfu([
-  {
-    markdown: true,
-    rules: {
-      'import/order': false,
-    },
-  },
+export default antfu(
   {
     unocss: false,
     formatters: true,
@@ -25,4 +19,4 @@ export default antfu([
       ],
     },
   },
-])
+)
