@@ -4,7 +4,7 @@ export default antfu(
   {
     unocss: false,
     formatters: true,
-    markdwn: false,
+    markdown: false,
     rules: {
       'import/order': [
         'error',

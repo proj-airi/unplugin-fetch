@@ -18,8 +18,9 @@ npm i @proj-airi/unplugin-fetch -D
 ### UnoCSS usage
 
 ```typescript
-import { Download } from '@proj-airi/unplugin-fetch/vite'
 import { defineConfig } from 'vite'
+
+import { Download } from '@proj-airi/unplugin-fetch/vite'
 
 export default defineConfig({
   plugins: [
