@@ -1,10 +1,16 @@
-// @ts-check
 import antfu from '@antfu/eslint-config'
 
-export default antfu(
+export default antfu([
+  {
+    markdown: true,
+    rules: {
+      'import/order': false,
+    },
+  },
   {
     unocss: false,
     formatters: true,
+    markdwn: false,
     rules: {
       'import/order': [
         'error',
@@ -19,4 +25,4 @@ export default antfu(
       ],
     },
   },
-)
+])
