@@ -13,7 +13,7 @@ Helper plugin for helping installing the remote assets into public dir.
 Pick the package manager of your choice:
 
 ```shell
-ni @proj-airi/lobe-icons -D # from @antfu/ni, can be installed via `npm i -g @antfu/ni`
+ni @proj-airi/unplugin-fetch -D # from @antfu/ni, can be installed via `npm i -g @antfu/ni`
 pnpm i @proj-airi/unplugin-fetch -D
 yarn i @proj-airi/unplugin-fetch -D
 npm i @proj-airi/unplugin-fetch -D
