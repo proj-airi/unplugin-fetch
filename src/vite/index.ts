@@ -13,14 +13,32 @@ export function Download(
   url: string,
   filename: string,
   destination: string,
+  options?: {
+    /**
+     * @default '.cache'
+     */
+    cacheDir?: string
+    /**
+     * @default 'public' or `config.publicDir`
+     */
+    parentDir?: false | string
+  },
 ): Plugin {
   return {
-    name: `download-${filename}`,
+    name: `unplugin-fetch-${filename}`,
     async configResolved(config) {
+      let { cacheDir, parentDir } = options || { cacheDir: '.cache', parentDir: config.publicDir }
+
+      if (parentDir === false) {
+        parentDir = undefined
+      }
+
       const logger = createLogger()
 
-      const cacheDir = resolve(join(config.root, '.cache'))
-      const publicDir = resolve(join(config.root, 'public'))
+      cacheDir = resolve(join(config.root, cacheDir))
+      if (parentDir !== false) {
+        parentDir = resolve(join(config.root, parentDir))
+      }
 
       try {
         // cache
@@ -35,14 +53,12 @@ export function Download(
 
         logger.info(`${filename} downloaded.`)
 
-        if (await exists(resolve(join(publicDir, destination, filename)))) {
+        if (await exists(resolve(join(parentDir as string, destination, filename)))) {
           return
         }
 
-        await mkdir(join(publicDir, destination), { recursive: true }).catch(() => { })
-        await copyFile(join(cacheDir, destination, filename), join(publicDir, destination, filename))
-
-        // TODO: use motion editor to remap emotions
+        await mkdir(join(parentDir as string, destination), { recursive: true }).catch(() => { })
+        await copyFile(join(cacheDir, destination, filename), join(parentDir as string, destination, filename))
       }
       catch (err) {
         console.error(err)
