@@ -54,6 +54,6 @@ jobs:
         run: pnpm publish -r --access public --no-git-checks
 
       - name: Sync GitHub Release
-        run: pnpm run changelogithub
+        run: pnpm dlx changelogithub
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
