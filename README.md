@@ -34,6 +34,8 @@ export default defineConfig({
 })
 ```
 
+`cacheDir` and `parentDir` can be absolute paths if you want to share cache across packages (for example `const sharedCacheDir = resolve(join(import.meta.dirname, '..', '..', '.cache'))`). Absolute values are used as-is; relative values are resolved against `config.root`. When `parentDir: false`, assets are copied to `config.root/<destination>` instead of being skipped.
+
 ## Other side projects born from Project AIRI
 
 - [Awesome AI VTuber](https://github.com/proj-airi/awesome-ai-vtuber): A curated list of AI VTubers and related projects

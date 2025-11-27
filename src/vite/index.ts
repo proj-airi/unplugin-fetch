@@ -2,7 +2,7 @@ import type { Plugin } from 'vite'
 
 import { Buffer } from 'node:buffer'
 import { copyFile, mkdir, writeFile } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
+import { isAbsolute, join, resolve } from 'node:path'
 
 import { ofetch } from 'ofetch'
 import { createLogger } from 'vite'
@@ -27,18 +27,17 @@ export function Download(
   return {
     name: `unplugin-fetch-${filename}`,
     async configResolved(config) {
-      let { cacheDir, parentDir } = options || { cacheDir: '.cache', parentDir: config.publicDir }
-
-      if (parentDir === false) {
-        parentDir = undefined
-      }
-
       const logger = createLogger()
 
-      cacheDir = resolve(join(config.root, cacheDir))
-      if (parentDir !== false) {
-        parentDir = resolve(join(config.root, parentDir))
-      }
+      const cacheDirOption = options?.cacheDir ?? '.cache'
+      const parentDirOption = options?.parentDir ?? config.publicDir ?? config.root
+
+      const cacheDir = isAbsolute(cacheDirOption) ? cacheDirOption : resolve(config.root, cacheDirOption)
+      const parentDir = parentDirOption === false
+        ? config.root
+        : isAbsolute(parentDirOption)
+          ? parentDirOption
+          : resolve(config.root, parentDirOption)
 
       try {
         // cache
@@ -53,12 +52,12 @@ export function Download(
 
         logger.info(`${filename} downloaded.`)
 
-        if (await exists(resolve(join(parentDir as string, destination, filename)))) {
+        if (await exists(resolve(join(parentDir, destination, filename)))) {
           return
         }
 
-        await mkdir(join(parentDir as string, destination), { recursive: true }).catch(() => { })
-        await copyFile(join(cacheDir, destination, filename), join(parentDir as string, destination, filename))
+        await mkdir(join(parentDir, destination), { recursive: true }).catch(() => { })
+        await copyFile(join(cacheDir, destination, filename), join(parentDir, destination, filename))
       }
       catch (err) {
         console.error(err)
