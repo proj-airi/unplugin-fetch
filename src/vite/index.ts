@@ -42,22 +42,24 @@ export function Download(
       try {
         // cache
         if (await exists(resolve(join(cacheDir, destination, filename)))) {
-          return
+          logger.info(`${filename} already exists in cache.`)
+        }
+        else {
+          logger.info(`Downloading ${filename}...`)
+          const stream = await ofetch(url, { responseType: 'arrayBuffer' })
+          await mkdir(join(cacheDir, destination), { recursive: true })
+          await writeFile(join(cacheDir, destination, filename), Buffer.from(stream))
+          logger.info(`${filename} downloaded.`)
         }
 
-        logger.info(`Downloading ${filename}...`)
-        const stream = await ofetch(url, { responseType: 'arrayBuffer' })
-        await mkdir(join(cacheDir, destination), { recursive: true })
-        await writeFile(join(cacheDir, destination, filename), Buffer.from(stream))
-
-        logger.info(`${filename} downloaded.`)
-
         if (await exists(resolve(join(parentDir, destination, filename)))) {
+          logger.info(`${filename} already exists in ${parentDir}.`)
           return
         }
 
         await mkdir(join(parentDir, destination), { recursive: true }).catch(() => { })
         await copyFile(join(cacheDir, destination, filename), join(parentDir, destination, filename))
+        logger.info(`${filename} copied to ${parentDir}.`)
       }
       catch (err) {
         console.error(err)
