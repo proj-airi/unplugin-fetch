@@ -36,6 +36,29 @@ export default defineConfig({
 
 `cacheDir` and `parentDir` can be absolute paths if you want to share cache across packages (for example `const sharedCacheDir = resolve(join(import.meta.dirname, '..', '..', '.cache'))`). Absolute values are used as-is; relative values are resolved against `config.root`. When `parentDir: false`, assets are copied to `config.root/<destination>` instead of being skipped.
 
+### Progress and timeout
+
+A download reports its progress once per second, so a long transfer never looks
+stuck:
+
+```text
+Downloading preload.data...
+preload.data: 42% (95.1 MiB / 226.2 MiB)
+preload.data downloaded in 71.4s.
+```
+
+`idleTimeout` aborts a download that stops sending data. It defaults to 30000
+milliseconds. Only silence between chunks counts, so a slow link to a large file
+is not treated as a failure. Raise it when a server pauses for long stretches:
+
+```typescript
+Download(url, 'preload.data', 'assets/models', { idleTimeout: 120_000 })
+```
+
+A download is written to `<filename>.part` and renamed when it completes. An
+interrupted download therefore leaves no file that a later run would treat as
+cached.
+
 ## Other side projects born from Project AIRI
 
 - [Awesome AI VTuber](https://github.com/proj-airi/awesome-ai-vtuber): A curated list of AI VTubers and related projects
