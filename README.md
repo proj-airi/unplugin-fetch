@@ -38,13 +38,36 @@ export default defineConfig({
 
 ### Progress and timeout
 
-A download reports its progress once per second, so a long transfer never looks
-stuck:
+On an interactive terminal every download of one config shares a single line,
+rewritten in place, so a long transfer never looks stuck:
 
 ```text
 Downloading preload.data...
+Downloading hiyori_free_zh.zip...
+0/2 files   43% ██████████░░░░░░░░░░░░░░░░░░  1.3 MiB / 3.0 MiB  1.3 MiB/s  ETA 0:01
+hiyori_free_zh.zip downloaded in 1.5s.
+hiyori_free_zh.zip copied to /path/to/public.
+preload.data   84% ██████████████████████░░░  2.6 MiB / 3.0 MiB  1.1 MiB/s  ETA 0:01
+preload.data downloaded in 3.1s.
+preload.data copied to /path/to/public.
+```
+
+The percentage counts the bytes of every file still downloading plus the ones
+that already finished, so one line covers the whole set even though the
+downloads run concurrently. When a server sends no `content-length`, the bar is
+replaced by a spinner and the received byte count. The line gives up detail
+before it wraps: the ETA goes first, then the speed and the total size, and only
+then is the file name shortened.
+
+Terminals that implement the ConEmu/Windows Terminal progress sequence
+(`OSC 9;4`) additionally show the same progress in the tab header and on the
+taskbar, cleared once the downloads finish.
+
+Output that is not a terminal — a pipe, CI, `--silent`, or a custom Vite logger
+— gets one line per file per second instead:
+
+```text
 preload.data: 42% (95.1 MiB / 226.2 MiB)
-preload.data downloaded in 71.4s.
 ```
 
 `idleTimeout` aborts a download that stops sending data. It defaults to 30000
