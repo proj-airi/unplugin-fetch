@@ -1,6 +1,8 @@
 import type { Buffer } from 'node:buffer'
 
-import type { Plugin } from 'vite'
+import type { Plugin, ResolvedConfig } from 'vite'
+
+import process from 'node:process'
 
 import { createWriteStream } from 'node:fs'
 import { copyFile, mkdir, rename, rm } from 'node:fs/promises'
@@ -9,12 +11,8 @@ import { Readable, Transform } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 
 import { ofetch } from 'ofetch'
-import { createLogger } from 'vite'
 
-import { exists } from '../utils'
-
-/** A progress line is written at most once per this many milliseconds. */
-const progressIntervalMs = 1000
+import { DownloadProgress, exists } from '../utils'
 
 /**
  * Abort a download after this long without receiving a single byte.
@@ -24,20 +22,53 @@ const progressIntervalMs = 1000
  */
 const defaultIdleTimeoutMs = 30_000
 
-function formatBytes(bytes: number): string {
-  if (bytes < 1024)
-    return `${bytes} B`
+interface DownloadTask {
+  id: number
+  filename: string
+}
 
-  const units = ['KiB', 'MiB', 'GiB', 'TiB']
-  let value = bytes / 1024
-  let unit = 0
+/**
+ * All downloads of one Vite config share a single progress line.
+ *
+ * Vite runs `configResolved` through `Promise.all`, so the `Download()` plugins
+ * of one config transfer concurrently, and reporting per file would interleave
+ * their output.
+ */
+const progressByConfig = new WeakMap<ResolvedConfig, DownloadProgress>()
 
-  while (value >= 1024 && unit < units.length - 1) {
-    value /= 1024
-    unit += 1
+/**
+ * Plugins are created while the config loads; keying the task by plugin lets
+ * each hook find its own.
+ */
+const taskByPlugin = new WeakMap<Plugin, DownloadTask>()
+let nextTaskId = 0
+
+function progressFor(config: ResolvedConfig): DownloadProgress {
+  const existing = progressByConfig.get(config)
+  if (existing)
+    return existing
+
+  const tasks: DownloadTask[] = []
+  for (const plugin of config.plugins) {
+    const task = taskByPlugin.get(plugin)
+    if (task)
+      tasks.push(task)
   }
 
-  return `${value.toFixed(1)} ${units[unit]}`
+  const progress = new DownloadProgress({
+    logger: config.logger,
+    tasks,
+    // A custom logger may not write to stdout at all, and silent mode asks for
+    // no output: neither should get raw ANSI
+    interactive: config.customLogger === undefined
+      && config.logLevel !== 'silent'
+      && process.stdout.isTTY === true
+      && process.env.TERM !== 'dumb',
+  })
+
+  progressByConfig.set(config, progress)
+
+  return progress
 }
 
 /**
@@ -54,10 +85,11 @@ async function downloadFile(options: {
   url: string
   filename: string
   path: string
-  logger: ReturnType<typeof createLogger>
   idleTimeoutMs: number
+  progress: DownloadProgress
+  taskId: number
 }): Promise<number> {
-  const { url, filename, path, logger, idleTimeoutMs } = options
+  const { url, filename, path, idleTimeoutMs, progress, taskId } = options
   const startedAt = Date.now()
   const partialPath = `${path}.part`
   const controller = new AbortController()
@@ -82,19 +114,12 @@ async function downloadFile(options: {
     // transfer still works, it just runs without a percentage.
     const total = Number(response.headers.get('content-length') ?? 0)
     let received = 0
-    let lastReportAt = startedAt
 
-    const reporter = new Transform({
+    const counter = new Transform({
       transform(chunk: Buffer, _encoding, callback) {
         armIdleTimeout()
         received += chunk.length
-
-        const now = Date.now()
-        if (total > 0 && now - lastReportAt >= progressIntervalMs) {
-          lastReportAt = now
-          const percent = Math.min(100, Math.floor((received / total) * 100))
-          logger.info(`${filename}: ${percent}% (${formatBytes(received)} / ${formatBytes(total)})`)
-        }
+        progress.update(taskId, received, total)
 
         callback(null, chunk)
       },
@@ -102,11 +127,13 @@ async function downloadFile(options: {
 
     await pipeline(
       Readable.fromWeb(body),
-      reporter,
+      counter,
       createWriteStream(partialPath),
     )
     await rename(partialPath, path)
-    logger.info(`${filename} downloaded in ${((Date.now() - startedAt) / 1000).toFixed(1)}s.`)
+
+    progress.complete(taskId)
+    progress.info(`${filename} downloaded in ${((Date.now() - startedAt) / 1000).toFixed(1)}s.`)
 
     return received
   }
@@ -144,10 +171,13 @@ export function Download(
     idleTimeout?: number
   },
 ): Plugin {
-  return {
+  const task: DownloadTask = { id: nextTaskId, filename }
+  nextTaskId += 1
+
+  const plugin: Plugin = {
     name: `unplugin-fetch-${filename}`,
     async configResolved(config) {
-      const logger = createLogger()
+      const progress = progressFor(config)
 
       const cacheDirOption = options?.cacheDir ?? '.cache'
       const parentDirOption = options?.parentDir ?? config.publicDir ?? config.root
@@ -164,33 +194,41 @@ export function Download(
       try {
         // cache
         if (await exists(resolve(cachePath))) {
-          logger.info(`${filename} already exists in cache.`)
+          progress.skip(task.id)
+          progress.info(`${filename} already exists in cache.`)
         }
         else {
-          logger.info(`Downloading ${filename}...`)
+          progress.info(`Downloading ${filename}...`)
           await mkdir(join(cacheDir, destination), { recursive: true })
           await downloadFile({
             url,
             filename,
             path: cachePath,
-            logger,
             idleTimeoutMs: options?.idleTimeout ?? defaultIdleTimeoutMs,
+            progress,
+            taskId: task.id,
           })
         }
 
         if (await exists(resolve(join(parentDir, destination, filename)))) {
-          logger.info(`${filename} already exists in ${parentDir}.`)
+          progress.info(`${filename} already exists in ${parentDir}.`)
           return
         }
 
         await mkdir(join(parentDir, destination), { recursive: true }).catch(() => { })
         await copyFile(cachePath, join(parentDir, destination, filename))
-        logger.info(`${filename} copied to ${parentDir}.`)
+        progress.info(`${filename} copied to ${parentDir}.`)
       }
       catch (err) {
+        // Erase the progress line it is holding first, or the error prints on top of it
+        progress.stop()
         console.error(err)
         throw err
       }
     },
   }
+
+  taskByPlugin.set(plugin, task)
+
+  return plugin
 }
