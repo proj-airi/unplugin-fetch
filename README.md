@@ -82,6 +82,15 @@ A download is written to `<filename>.part` and renamed when it completes. An
 interrupted download therefore leaves no file that a later run would treat as
 cached.
 
+`retries` downloads the file again after a network error, a stall, a truncated
+body, or an HTTP 408, 425, 429, or 5xx status. It defaults to 3. The waits
+between attempts are 1 s, 2 s, 4 s, and so on. Other 4xx statuses, such as 404,
+fail at once:
+
+```typescript
+Download(url, 'preload.data', 'assets/models', { retries: 5 })
+```
+
 ## Other side projects born from Project AIRI
 
 - [Awesome AI VTuber](https://github.com/proj-airi/awesome-ai-vtuber): A curated list of AI VTubers and related projects
