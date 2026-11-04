@@ -10,7 +10,7 @@ import { isAbsolute, join, resolve } from 'node:path'
 import { Readable, Transform } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 
-import { ofetch } from 'ofetch'
+import { FetchError, ofetch } from 'ofetch'
 
 import { DownloadProgress, exists } from '../utils'
 
@@ -21,6 +21,32 @@ import { DownloadProgress, exists } from '../utils'
  * only silence between chunks counts.
  */
 const defaultIdleTimeoutMs = 30_000
+
+/**
+ * Attempts after the first one. A dropped connection or a truncated body fails
+ * the whole Vite build, so one network blip must not end it.
+ */
+const defaultRetries = 3
+
+/** Wait before the first retry. Each later retry waits twice as long. */
+const retryBaseDelayMs = 1_000
+
+/**
+ * HTTP statuses that a later attempt can fix. Any other 4xx means the request
+ * itself is wrong, so a retry only wastes time.
+ */
+const retryableStatuses = new Set([408, 425, 429])
+
+function isRetryableError(error: unknown): boolean {
+  if (!(error instanceof FetchError) || error.statusCode === undefined)
+    return true
+
+  return error.statusCode >= 500 || retryableStatuses.has(error.statusCode)
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
 
 interface DownloadTask {
   id: number
@@ -105,7 +131,9 @@ async function downloadFile(options: {
   armIdleTimeout()
 
   try {
-    const response = await ofetch.raw(url, { responseType: 'stream', signal: controller.signal })
+    // The retry loop in downloadWithRetry also covers a body that breaks mid-transfer,
+    // which the retry of ofetch cannot see.
+    const response = await ofetch.raw(url, { responseType: 'stream', signal: controller.signal, retry: 0 })
     const body = response._data
     if (!body)
       throw new Error(`${filename}: the response carried no body`)
@@ -150,6 +178,32 @@ async function downloadFile(options: {
   }
 }
 
+/**
+ * Runs {@link downloadFile} again after a network error, a stall, a truncated
+ * body, or a retryable HTTP status. Waits 1 s, 2 s, 4 s, and so on between attempts.
+ *
+ * Throws the last error when every attempt fails, or at once for an error that
+ * a retry cannot fix, such as a 404.
+ */
+async function downloadWithRetry(options: Parameters<typeof downloadFile>[0] & { retries: number }): Promise<number> {
+  const { retries, ...downloadOptions } = options
+
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await downloadFile(downloadOptions)
+    }
+    catch (error) {
+      if (attempt >= retries || !isRetryableError(error))
+        throw error
+
+      const delayMs = retryBaseDelayMs * 2 ** attempt
+      const reason = error instanceof Error ? error.message : String(error)
+      options.progress.info(`${options.filename}: attempt ${attempt + 1} of ${retries + 1} failed (${reason}). Retrying in ${delayMs / 1000}s...`)
+      await sleep(delayMs)
+    }
+  }
+}
+
 export function Download(
   url: string,
   filename: string,
@@ -169,6 +223,13 @@ export function Download(
      * @default 30000
      */
     idleTimeout?: number
+    /**
+     * Retry the download this many times after a network error, a stall, a
+     * truncated body, or an HTTP 408, 425, 429, or 5xx status.
+     *
+     * @default 3
+     */
+    retries?: number
   },
 ): Plugin {
   const task: DownloadTask = { id: nextTaskId, filename }
@@ -200,13 +261,14 @@ export function Download(
         else {
           progress.info(`Downloading ${filename}...`)
           await mkdir(join(cacheDir, destination), { recursive: true })
-          await downloadFile({
+          await downloadWithRetry({
             url,
             filename,
             path: cachePath,
             idleTimeoutMs: options?.idleTimeout ?? defaultIdleTimeoutMs,
             progress,
             taskId: task.id,
+            retries: options?.retries ?? defaultRetries,
           })
         }
 
